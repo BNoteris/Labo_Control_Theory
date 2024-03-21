@@ -83,3 +83,65 @@ The function "PID_RT" needs to be included in a "for or while loop".
 
 The function "PID_RT" appends new values to the vectors "MV", "MVP", "MVI", and "MVD". The appended values are based on the PID algorithm, the controller mode, and feedforward. Note that saturation of "MV" within the limits [MVMin MVMax] is implemented with anti wind-up. 
     '''
+ if len(PV) == 0: #Si pas de valeur initiale
+        E.append(SP[-1] - PVInit)  # 
+    else:
+        E.append(SP[-1] - PV[-1]) 
+
+    methodI, methodD = method.split('-')
+
+    ''' Initialisation de MVI'''
+    if len(MVI) == 0:
+        MVI.append((Kc*Ts/Ti)*E[-1])
+    else:
+        if methodI == 'TRAP':
+            MVI.append(MVI[-1] + (0.5*Kc*Ts/Ti)*(E[-1]+E[-2]))
+        else:
+            MVI.append(MVI[-1] + (Kc*Ts/Ti)*E[-1])
+
+    '''Initialisation de MVD : voir slide 193  '''
+    Tfd = alpha * Td
+    if Td > 0:
+        if len(MVD) != 0:
+            if len(E) == 1:
+                MVD.append((Tfd / (Tfd + Ts)) *
+                           MVD[-1] + ((Kc * Td) / (Tfd + Ts)) * (E[-1]))
+            else:
+                MVD.append((Tfd / (Tfd + Ts)) *
+                           MVD[-1] + ((Kc * Td) / (Tfd + Ts)) * (E[-1] - E[-2]))
+        else:
+            if len(E) == 1:
+                MVD.append((Kc * Td) / (Tfd + Ts) * (E[-1]))
+            else:
+                MVD.append((Kc * Td) / (Tfd + Ts) * (E[-1] - E[-2]))
+
+    '''Actualisation de MVP'''
+    MVP.append(E[-1] * Kc)
+
+    '''Activation Feedforward'''
+    if ManFF:
+        MVFFI = MVFF[-1]
+    else:
+        MVFFI = 0
+    '''Mode manuel et anti-wind-up'''
+
+    if Man[-1]:
+        if ManFF:
+            MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1]
+        else:
+            MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1] - MVFFI
+
+    '''Limitation de MV'''
+
+    MV_TEMP = MVP[-1] + MVI[-1] + MVD[-1] + MVFFI
+
+    if MV_TEMP >= MVMax:
+        MVI[-1] = MVMax - MVP[-1] - MVD[-1] - MVFFI
+        MV_TEMP = MVMax
+
+    if MV_TEMP <= MVMin:
+        MVI[-1] = MVMin - MVP[-1] - MVD[-1] - MVFFI
+        MV_TEMP = MVMin
+
+    MV.append(MV_TEMP)
+
