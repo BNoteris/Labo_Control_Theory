@@ -47,102 +47,108 @@ def LL_RT(MV,Kp,Ts,Tle,Tla,PV,PVInit=0,method='EBD'):
 
 
 
-def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts, MVMin, MVMax, MV, MVP, MVI, MVD, E, ManFF=False, PVInit=0, method='EBD-EBD'):
-    '''
-The function "PID_RT" needs to be included in a "for or while loop". 
+# PID functions
 
-:SP: SP (or SetPoint) vector 
-:PV: PV (or Process Value) vector 
-:Man: Man (or Manual controller mode) vector (True or False) 
-:MVMan: MVMan (or Manual value for MV) vector 
-:MVFF: MVFF (or Feedforward) vector 
+def Proportional_action(MVP, Kc, E):
+    """
+    Action proportionnel du PID
+    MVP
+    """
+    MVP.append(Kc*E[-1])
+    return MVP
 
-:Kc: controller gain 
-:Ti: integral time constant [s] 
-:Td: derivative time constant [s] 
-:alpha: Tfd = alpha*Td where Tfd is the derivative filter time constant [s] 
-:Ts: sampling period [s] 
-
-:MVMin: minimum value for MV (used for saturation and anti wind-up) 
-:MVMax: maximum value for MV (used for saturation and anti wind-up) 
-
-:MV: MV (or Manipulated Value) vector 
-:MVP: MVP (or Propotional part of MV) vector 
-:MVI: MVI (or Integral part of MV) vector 
-:MVD: MVD (or Derivative part of MV) vector 
-:E: E (or control Error) vector 
-
-:ManFF: Activated FF in manual mode (optional: default boolean value is False) 
-:PVInit: Initial value for PV (optional: default value is 0): used if PID_RT is ran first in the squence and no value of PV is available yet. 
-
-:method: discretisation method (optional: default value is 'EBD') 
-    EBD-EBD: EBD for integral action and EBD for derivative action 
-    EBD-TRAP: EBD for integral action and TRAP for derivative action 
-    TRAP-EBD: TRAP for integral action and EBD for derivative action 
-    TRAP-TRAP: TRAP for integral action and TRAP for derivative action 
-
-The function "PID_RT" appends new values to the vectors "MV", "MVP", "MVI", and "MVD". The appended values are based on the PID algorithm, the controller mode, and feedforward. Note that saturation of "MV" within the limits [MVMin MVMax] is implemented with anti wind-up. 
-    '''
-  
-    if len(PV) == 0: # check longueur PV pour valeur précédente 
-        E.append(SP[-1] - PVInit)  # Si pas de valeur précédente au démarrage on utilise PVinit
+def Intergral_action(MVI, Kc, Ts, Ti, E, methodI):
+    """
+    Action intégrale du PID
+    MVI
+    """
+    # MV[k] is MV[-1] and MV[k-1] is MV[-2]
+    if len(MVI)==0:
+        MVI.append(((Kc*Ts)/Ti)*(E[-1]))
     else:
-        E.append(SP[-1] - PV[-1])  #slide 194
+        if methodI == 'EBD':
+            MVI.append(MVI[-1] + ((Kc*Ts)/Ti)*(E[-1]))
+        elif methodI == 'TRAP':
+            MVI.append(MVI[-1] + ((Kc*Ts)/(2*Ti))*(E[-1] + E[-2]))        
+        else: # EBD
+            MVI.append(MVI[-1] + ((Kc*Ts)/Ti)*(E[-1]))
+    return MVI
 
-    methodI, methodD = method.split('-') #envoie les 2 méthodes choisis vers l'action intégrale et dérivée
-
-    ''' Initialisation de MVI'''
-    if len(MVI) == 0: # check longueur MVI pour valeur précédente 
-        MVI.append((Kc*Ts/Ti)*E[-1]) #crée première valeur
+def Derivative_action(MVD,Tfd, Ts, Kc, Td, E, methodD):
+    """
+    Action derivative du PID
+    MVD
+    """
+    if len(MVD)==0:
+        MVD.append(((Kc*Td)/(Tfd+Ts))*(E[-1]))
     else:
-        if methodI == 'TRAP': 
-            MVI.append(MVI[-1] + (0.5*Kc*Ts/Ti)*(E[-1]+E[-2])) #slide 196
-        else:
-            MVI.append(MVI[-1] + (Kc*Ts/Ti)*E[-1]) #slide 194
+        if methodD == 'EBD':
+            MVD.append((Tfd/(Tfd+Ts))*MVD[-1] + ((Kc*Td)/(Tfd+Ts))*(E[-1] - E[-2])) 
+        elif methodD =='TRAP':
+            MVD.append((((Tfd-(Ts/2))/(Tfd+(Ts/2)))*MVD[-1] + ((Kc*Td)/(Tfd+(Ts/2)))*(E[-1] - E[-2])))     
+        else:  # EBD
+            MVD.append((Tfd/(Tfd+Ts))*MVD[-1] + ((Kc*Td)/(Tfd+Ts))*(E[-1] - E[-2]))
+    return MVD
 
-    '''Initialisation de MVD '''
-    Tfd = alpha * Td   # derivative filter time constant
-    if Td > 0:    #derivative time constant  positive donc on regarde dans le futur
-        if len(MVD) != 0: # au moins une valeur MVD de disponible
-            if len(E) == 1: #seulement une valeur précédente disponible
-                MVD.append((Tfd / (Tfd + Ts)) *
-                           MVD[-1] + ((Kc * Td) / (Tfd + Ts)) * (E[-1]))
-            else:
-                MVD.append((Tfd / (Tfd + Ts)) *
-                           MVD[-1] + ((Kc * Td) / (Tfd + Ts)) * (E[-1] - E[-2]))
-        else: # Pas de valeur de MVD de disponible
-            if len(E) == 1:
-                MVD.append((Kc * Td) / (Tfd + Ts) * (E[-1]))
-            else:
-                MVD.append((Kc * Td) / (Tfd + Ts) * (E[-1] - E[-2]))
+def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts, MVmin, MVmax, MV, MVP, MVI, MVD, E, ManFF=False, PVinit=0, method="EBD-EBD"):
+    """
+    SP = setpoint vector
+    PV = process value vector
+    Man = manual controller mode vector : bool
+    MVMan = Manual value for MV vector
+    MVFF = feedforward vector
+    Kc = controller gain
+    Ti= integral time constant
+    Td = derivative time constant
+    alpha = Tfd = alpha*Td = where Tfd is derivative filter time constant
 
-    '''Actualisation de MVP'''
-    MVP.append(E[-1] * Kc) #slide 194
+    MVMin = min value for MV
+    MVMax = max value for MV
 
-    '''Activation Feedforward'''
-    if ManFF: #pour la suite
-        MVFFI = MVFF[-1]
-    else:
-        MVFFI = 0
-    '''Mode manuel et anti-wind-up'''
+    MV = Maniplated value vector
+    MVP = proportional part of MV vector
+    MVI =  integral part of MV vector
+    MVD = derivative part of MV vector
+    E = control error vector
 
-    if Man[-1]: #slide 201 
+    ManFF = activated FF in manuel mode
+    PVInit = initial value of PV
+    Method : discreditisation value for PV
+        EBD-EBD: Euler Backward difference
+        TRAP-TRAP: Trapezoïdal method
+
+    The function PID_RT appends new values to the vector MV, MVP, MVI, MVD based on PID algorithm, controller mode and FF
+    """
+
+    # Initialisation 
+    methodI, methodD = method.split('-')
+    Tfd = alpha*Td
+    if len(PV) == 0:
+        E.append(SP[-1] - PVinit)
+    else: 
+        E.append(SP[-1] - PV[-1])
+    
+    # Calcul des 3 parties
+    MVP = Proportional_action(MVP, Kc, E)
+    MVI = Intergral_action(MVI, Kc, Ts, Ti, E, methodI)
+    MVD = Derivative_action(MVD,Tfd, Ts, Kc, Td, E, methodD)
+
+    # Mode manuel + anti-wind up (integrator help)
+    if Man[-1] == True:
         if ManFF:
-            MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1]
+            MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1] 
         else:
-            MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1] - MVFFI
+            MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1] - MVFF[-1]
+            
+    # Saturation
+    if (MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1]) > MVmax:
+        MVI[-1] = MVmax - MVP[-1] - MVD[-1] - MVFF[-1]
+    elif (MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1]) < MVmin:
+        MVI[-1] = MVmin - MVP[-1] - MVD[-1] - MVFF[-1]
 
-    '''Limitation de MV'''
-
-    MV_TEMP = MVP[-1] + MVI[-1] + MVD[-1] + MVFFI #valeur de MV[k] slide 198
-#si MVMin>=MV[k] ou MV[k]>=MVMax on utilise la partie intégration pour compenser slide 
-    if MV_TEMP >= MVMax: 
-        MVI[-1] = MVMax - MVP[-1] - MVD[-1] - MVFFI
-        MV_TEMP = MVMax
-
-    if MV_TEMP <= MVMin:
-        MVI[-1] = MVMin - MVP[-1] - MVD[-1] - MVFFI
-        MV_TEMP = MVMin
-
-    MV.append(MV_TEMP)
+    # Ajout sur MV
+    MV.append(MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1])
+    
+    
+    
 
