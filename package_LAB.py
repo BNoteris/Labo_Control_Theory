@@ -83,49 +83,50 @@ The function "PID_RT" needs to be included in a "for or while loop".
 
 The function "PID_RT" appends new values to the vectors "MV", "MVP", "MVI", and "MVD". The appended values are based on the PID algorithm, the controller mode, and feedforward. Note that saturation of "MV" within the limits [MVMin MVMax] is implemented with anti wind-up. 
     '''
- if len(PV) == 0: #Si pas de valeur initiale
-        E.append(SP[-1] - PVInit)  # 
+  
+    if len(PV) == 0: # check longueur PV pour valeur précédente 
+        E.append(SP[-1] - PVInit)  # Si pas de valeur précédente au démarrage on utilise PVinit
     else:
-        E.append(SP[-1] - PV[-1]) 
+        E.append(SP[-1] - PV[-1])  #slide 194
 
-    methodI, methodD = method.split('-')
+    methodI, methodD = method.split('-') #envoie les 2 méthodes choisis vers l'action intégrale et dérivée
 
     ''' Initialisation de MVI'''
-    if len(MVI) == 0:
-        MVI.append((Kc*Ts/Ti)*E[-1])
+    if len(MVI) == 0: # check longueur MVI pour valeur précédente 
+        MVI.append((Kc*Ts/Ti)*E[-1]) #crée première valeur
     else:
-        if methodI == 'TRAP':
-            MVI.append(MVI[-1] + (0.5*Kc*Ts/Ti)*(E[-1]+E[-2]))
+        if methodI == 'TRAP': 
+            MVI.append(MVI[-1] + (0.5*Kc*Ts/Ti)*(E[-1]+E[-2])) #slide 196
         else:
-            MVI.append(MVI[-1] + (Kc*Ts/Ti)*E[-1])
+            MVI.append(MVI[-1] + (Kc*Ts/Ti)*E[-1]) #slide 194
 
-    '''Initialisation de MVD : voir slide 193  '''
-    Tfd = alpha * Td
-    if Td > 0:
-        if len(MVD) != 0:
-            if len(E) == 1:
+    '''Initialisation de MVD '''
+    Tfd = alpha * Td   # derivative filter time constant
+    if Td > 0:    #derivative time constant  positive donc on regarde dans le futur
+        if len(MVD) != 0: # au moins une valeur MVD de disponible
+            if len(E) == 1: #seulement une valeur précédente disponible
                 MVD.append((Tfd / (Tfd + Ts)) *
                            MVD[-1] + ((Kc * Td) / (Tfd + Ts)) * (E[-1]))
             else:
                 MVD.append((Tfd / (Tfd + Ts)) *
                            MVD[-1] + ((Kc * Td) / (Tfd + Ts)) * (E[-1] - E[-2]))
-        else:
+        else: # Pas de valeur de MVD de disponible
             if len(E) == 1:
                 MVD.append((Kc * Td) / (Tfd + Ts) * (E[-1]))
             else:
                 MVD.append((Kc * Td) / (Tfd + Ts) * (E[-1] - E[-2]))
 
     '''Actualisation de MVP'''
-    MVP.append(E[-1] * Kc)
+    MVP.append(E[-1] * Kc) #slide 194
 
     '''Activation Feedforward'''
-    if ManFF:
+    if ManFF: #pour la suite
         MVFFI = MVFF[-1]
     else:
         MVFFI = 0
     '''Mode manuel et anti-wind-up'''
 
-    if Man[-1]:
+    if Man[-1]: #slide 201 
         if ManFF:
             MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1]
         else:
@@ -133,9 +134,9 @@ The function "PID_RT" appends new values to the vectors "MV", "MVP", "MVI", and 
 
     '''Limitation de MV'''
 
-    MV_TEMP = MVP[-1] + MVI[-1] + MVD[-1] + MVFFI
-
-    if MV_TEMP >= MVMax:
+    MV_TEMP = MVP[-1] + MVI[-1] + MVD[-1] + MVFFI #valeur de MV[k] slide 198
+#si MVMin>=MV[k] ou MV[k]>=MVMax on utilise la partie intégration pour compenser slide 
+    if MV_TEMP >= MVMax: 
         MVI[-1] = MVMax - MVP[-1] - MVD[-1] - MVFFI
         MV_TEMP = MVMax
 
