@@ -148,7 +148,50 @@ def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts, MVmin, MVmax, MV, MV
 
     # Ajout sur MV
     MV.append(MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1])
-    
-    
+
+
+
+def IMCTuning(K, Tlag1, Tlag2=0, theta=0, gamma = 0.5, process="FOPDT-PI"):
+    """
+    IMCTuning computes the IMC PID tuning parameters for FOPDT and SOPDT processes.
+    K: process gain (Kp)
+    Tlag1: first (main) lag time constant [s]
+    Tlag2: second lag time constant [s]
+    theta: delay [s]
+    gamma: used to computed the desired closed loop time constant Tclp [s] (range [0.2 -> 0.9])
+    process:
+        FOPDT-PI: First Order Plus Dead Time for P-I control (IMC tuning case G)
+        FOPDT-PID: First Order Plus Dead Time for P-I-D control (IMC tuning case H)
+        SOPDT :Second Order Plus Dead Time for P-I-D control (IMC tuning case I)
+        
+    return : PID controller parameters Kc, Ti and Td
+    """
+    Tclp = gamma*Tlag1 
+    if process=="FOPDT-PI":
+        Kc = (Tlag1/(Tclp+theta))/K
+        Ti = Tlag1
+        Td = 0
+    elif process=="FOPDT-PID":
+        Kc= ((Tlag1 + theta/2)/(Tclp + theta/2))/K
+        Ti = Tlag1 + theta/2
+        Td = (Tlag1*theta)/(2*Tlag1+theta)
+    elif process=="SOPDT": 
+        Kc = ((Tlag1 + Tlag2)/(Tclp + theta))/K
+        Ti = (Tlag1 +Tlag2)
+        Td = ((Tlag1*Tlag2))/(Tlag1+Tlag2)
+    else:
+        Kc = (Tlag1/(Tclp+theta))/K
+        Ti = Tlag1
+        Td = 0
+    return (Kc, Ti, Td)
     
 
+
+class PID:
+    def __init__(self, parameters):
+
+        self.parameters = parameters
+        self.parameters['Kc'] = parameters['Kc'] if 'Kc' in parameters else 1.0
+        self.parameters['alpha'] = parameters['alpha'] if 'alpha' in parameters else 0.0
+        self.parameters['Ti'] = parameters['Ti'] if 'Ti' in parameters else 0.0
+        self.parameters['Td'] = parameters['Td'] if 'Td' in parameters else 0.0
