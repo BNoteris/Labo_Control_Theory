@@ -151,7 +151,7 @@ def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts, MVmin, MVmax, MV, MV
 
 
 
-def IMCTuning(Kp, gamma = 0, process="FOPDT", model="classic", Tg=0, Tu=0, a=0, t1=0, t2=0):
+def IMCTuning(K, Tlag1, Tlag2=0, theta=0, gamma = 0.5, process="FOPDT-PI"):
     """
     IMCTuning computes the IMC PID tuning parameters for FOPDT and SOPDT processes.
     K: process gain (Kp)
@@ -163,39 +163,121 @@ def IMCTuning(Kp, gamma = 0, process="FOPDT", model="classic", Tg=0, Tu=0, a=0, 
         FOPDT-PI: First Order Plus Dead Time for P-I control (IMC tuning case G)
         FOPDT-PID: First Order Plus Dead Time for P-I-D control (IMC tuning case H)
         SOPDT :Second Order Plus Dead Time for P-I-D control (IMC tuning case I)
-    :model: broida_simple or broida_complex for FOPDT
-    :Tg:
-    :Tu:
-    :a:
-    :t1: time for 28% of PV (100% being the steady state)
-    :t2: time for 44% of PV    
         
     return : PID controller parameters Kc, Ti and Td
     """
-    
-    if (process == "FOPDT"):
-        if (model == "broida_simple"):
-            Tlag1 = Tg
-            theta = Tu
-        elif (model == "broida_complex"):
-            Tlag1 = 5.5*(t2 - t1)
-            theta = (2.8*t1) - (1.8*t2)
-        Tclp = gamma*Tlag1     
-        Kc = ((Tlag1 + theta/2) / (Tclp + theta/2)) / Kp
+    Tclp = gamma*Tlag1 
+    if process=="FOPDT-PI":
+        Kc = (Tlag1/(Tclp+theta))/K
+        Ti = Tlag1
+        Td = 0
+    elif process=="FOPDT-PID":
+        Kc= ((Tlag1 + theta/2)/(Tclp + theta/2))/K
         Ti = Tlag1 + theta/2
-        Td = (Tlag1*theta) / (2*Tlag1 + theta)
-
-    elif (process == "SOPDT"):
-        if (model == "vdG"):
-            e= 2.71828
-            Tlag1 = Tg * ((3*a*e - 1) / (1 + a*e))
-            Tlag2 = Tg * ((1 - a*e / (1 + a*e))
-            theta = Tu - ((Tlag1*Tlag2) / (Tlag1 + 3*Tlag2))
-            Tclp = gamma*Tlag1 
-            Kc = ((Tlag1 + Tlag2) / (Tclp + theta)) / Kp
-            Ti = Tlag1 + Tlag2
-            Td = (Tlag1*Tlag2) / (Tlag1 + Tlag2)
-          
+        Td = (Tlag1*theta)/(2*Tlag1+theta)
+    elif process=="SOPDT": 
+        Kc = ((Tlag1 + Tlag2)/(Tclp + theta))/K
+        Ti = (Tlag1 +Tlag2)
+        Td = ((Tlag1*Tlag2))/(Tlag1+Tlag2)
+    else:
+        Kc = (Tlag1/(Tclp+theta))/K
+        Ti = Tlag1
+        Td = 0
     return (Kc, Ti, Td)
     
 
+
+class PID:
+    def __init__(self, parameters):
+
+        self.parameters = parameters
+        self.parameters['Kc'] = parameters['Kc'] if 'Kc' in parameters else 1.0
+        self.parameters['alpha'] = parameters['alpha'] if 'alpha' in parameters else 0.0
+        self.parameters['Ti'] = parameters['Ti'] if 'Ti' in parameters else 0.0
+        self.parameters['Td'] = parameters['Td'] if 'Td' in parameters else 0.0
+
+def Margin(Ps,C,omega,Show=True):
+    """
+    Calculate the gain margin and phase margin. They allow us to analyze the robustness of the PID.
+    :Ps : Process
+    :C: Controller Transfer Function
+    :omega : frequency vector
+    :show : allows graphical display
+
+    """
+    # Initialisation des paramètres
+    s = 1j*omega
+    Kc = C.parameters['Kc']
+    Ti = C.parameters['Ti']
+    Td = C.parameters['Td']
+    Tfd = C.parameters['Tfd']
+    
+    # Calcul du Controller 
+    Cs = Kc*(1 + 1/(Ti*s)+ (Td*s)/(Tfd*s +1))
+    
+    # Loop gain L(s) = P(s)C(s)
+    Ls =Cs*Ps 
+
+    # Plot de L(s)
+    if Show == True:
+        fig, (ax_freq, ax_time) = plt.subplots(2, 1)
+        fig.set_figheight(12)
+        fig.set_figwidth(22)
+
+        # Amplitude
+        ax_freq.semilogx(omega, 20*np.log10(np.abs(Ls)), label='L(s)')
+        gain_min = np.min(20*np.log10(np.abs(Ls)/5))
+        gain_max = np.max(20*np.log10(np.abs(Ls)*5))
+        ax_freq.set_xlim([np.min(omega), np.max(omega)])
+        ax_freq.set_ylim([gain_min, gain_max])
+        ax_freq.set_ylabel('Amplitude |P| [db]')
+        ax_freq.set_title('Bode plot of P')
+        ax_freq.legend(loc='best')
+
+        # Find crossover frequency where amplitude is approximately 0 dB (gain is 1)
+        crossover_freq = omega[np.argmin(np.abs(20*np.log10(np.abs(Ls)) - 0))]
+        ax_freq.axvline(x=crossover_freq, color='red', linestyle='--', linewidth=1)  
+
+        # Phase
+        ax_time.semilogx(omega, (180/np.pi)*np.unwrap(np.angle(Ls)), label='L(s)')
+        ax_time.set_xlim([np.min(omega), np.max(omega)])
+        ph_min = np.min((180/np.pi)*np.unwrap(np.angle(Ps))) - 10
+        ph_max = np.max((180/np.pi)*np.unwrap(np.angle(Ps))) + 10
+        ax_time.set_ylim([np.max([ph_min, -200]), ph_max])
+        ax_time.set_ylabel(r'Phase $\angle P$ [°]')
+        ax_time.legend(loc='best')
+        ax_freq.axhline(y=0, color='black')
+        ax_time.axhline(y=-180, color='black')
+
+        # Find crossover frequency for phase
+        crossover_phase = omega[np.argmin(np.abs((180/np.pi)*np.unwrap(np.angle(Ls)) + 180))]
+        ax_time.axvline(x=crossover_phase, color='red', linestyle='--', linewidth=1)  
+
+    # Crossover frequency
+    i = 0
+    for value in Ls:   # slide 69
+        i+=1
+        dB = 20*np.log10(np.abs(value))
+        if dB < 0.05 and dB > -0.05:
+            OmegaC =  omega[i-1]
+            PhaseC = np.angle(value,deg=True)
+            break        
+
+    # Ultimate Frequency
+    n = 0
+    for value in Ls:
+        n+=1
+        deg = np.angle(value,deg=True)
+        if deg < -179.5 and deg > -180.5:
+            OmegaU = omega[n-1]
+            u_freq = 20*np.log10(np.abs(value))
+            break
+    
+    # Affichage graphique
+    if Show ==True:
+        ax_freq.plot([OmegaU, OmegaU], [0, u_freq], color='red', linewidth=5)
+        ax_freq.plot([OmegaU, OmegaU], [ph_min, ph_max], linestyle='--', color='red')
+        ax_time.plot([OmegaC,OmegaC],[PhaseC,-180], color='red', linewidth=5)
+        ax_time.plot([OmegaC, OmegaC], [ph_min, ph_max], linestyle='--', color='red')
+    print('Gain margin :',-u_freq,'dB at the ultimate frequency :',OmegaU,'rad/s')
+    print('Phase margin : ',PhaseC +180,'° at the crossover frequency :',OmegaC,'rad/s')        
